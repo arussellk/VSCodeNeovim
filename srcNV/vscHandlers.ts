@@ -11,46 +11,73 @@ export class VscHandlers {
     await Vim.nv.input(key);
   }
 
-  static async handleKeyEventNV(key: string) {
-    const prevMode = Vim.mode.mode;
-    const prevBlocking = Vim.mode.blocking;
-    async function input(k: string) {
-      await Vim.nv.input(k === '<' ? '<lt>' : k);
-      await NvUtil.updateMode();
-      if (Vim.mode.mode === 'r') {
-        await Vim.nv.input('<CR>');
-      }
-
-      const curPos = await NvUtil.getCursorPos();
-      const startPos = await NvUtil.getSelectionStartPos();
-      const curWant = await NvUtil.getCurWant();
-      const winline = (await Vim.nv.call('winline')) - 1;
-      const curTick = await Vim.nv.buffer.changedtick;
-      vscode.commands.executeCommand('revealLine', {
-        lineNumber: Math.min(
-          vscode.window.activeTextEditor!.selection.active.line,
-          curPos.line - winline
-        ),
-        at: 'top',
-      });
-      // Optimization that makes movement very smooth. However, occasionally
-      // makes it more difficult to debug so it's turned off for now.
-      // if (curTick === Vim.prevState.bufferTick) {
-      //   NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
-      //   return;
-      // }
-      // Vim.prevState.bufferTick = curTick;
-      NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
-      await NvUtil.copyTextFromNeovim();
-      NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
+  static async _input(k: string) {
+    const x = await Vim.nv.input(k === '<' ? '<lt>' : k);
+    await NvUtil.updateMode();
+    if (Vim.mode.mode === 'r') {
+      await Vim.nv.input('<CR>');
     }
-    if (prevMode !== 'i') {
-      await input(key);
+
+    const curPos = await NvUtil.getCursorPos();
+    const startPos = await NvUtil.getSelectionStartPos();
+    const curWant = await NvUtil.getCurWant();
+    const winline = (await Vim.nv.call('winline')) - 1;
+    const curTick = await Vim.nv.buffer.changedtick;
+    vscode.commands.executeCommand('revealLine', {
+      lineNumber: Math.min(
+        vscode.window.activeTextEditor!.selection.active.line,
+        curPos.line - winline
+      ),
+      at: 'top',
+    });
+    // Optimization that makes movement very smooth. However, occasionally
+    // makes it more difficult to debug so it's turned off for now.
+    // if (curTick === Vim.prevState.bufferTick) {
+    //   NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
+    //   return;
+    // }
+    // Vim.prevState.bufferTick = curTick;
+    NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
+    await NvUtil.copyTextFromNeovim();
+    NvUtil.changeSelectionFromModeSync(Vim.mode.mode, curPos, startPos, curWant);
+  }
+
+  static async _inputFavorVSCode(key: string) {
+    const beforeLength = vscode.window.activeTextEditor!.document.getText().length;
+    await vscode.commands.executeCommand('default:type', { text: key });
+    const afterLength = vscode.window.activeTextEditor!.document.getText().length;
+
+    if (afterLength !== beforeLength + 1) {
+      // VS Code expanded something like ( -> () or { -> {}
+
+      const lines = vscode.window.activeTextEditor!.document.getText().split('\n');
+      await NvUtil.atomBufSetLines(lines); // TODO-rk: this is not actually updating the nvim instance. Do I need to provide something to the `buffer` param?
+      await NvUtil.copyTextFromNeovim();
+    } else {
+      /*
+       * Since VS Code did not expand something, we should give nvim the chance
+       * to do key remapping.
+       *
+       * The deleteLeft is a hack to "undo" the default:type from above.
+       * Maybe there is a way to ask nvim if there is a remapping for a key
+       * instead of this?
+       */
+
+      await vscode.commands.executeCommand('deleteLeft');
+      await this._input(key);
+    }
+  }
+
+  static async handleKeyEventNV(key: string) {
+
+    const prevMode = Vim.mode.mode;
+    if (Vim.mode.mode !== 'i') {
+      await this._input(key);
     } else {
       if (key.length > 1) {
-        await input(key);
+        await this._input(key);
       } else {
-        await vscode.commands.executeCommand('default:type', { text: key });
+        await this._inputFavorVSCode(key);
       }
     }
 

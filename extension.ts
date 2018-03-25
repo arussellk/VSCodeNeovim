@@ -64,7 +64,16 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }
   });
-  vscode.workspace.onDidChangeTextDocument(VscHandlers.handleTextDocumentChange);
+
+  /*
+   * onDidChangeTextDocument fires when VS Code decides there have been
+   * significant enough changes to warrant it.
+   * One such situation is when the user presses <enter> and creates a new line.
+   *
+   * This is too late and too unreliable of an event to be able to respond to
+   * key mappings from Neovim.
+   */
+  //vscode.workspace.onDidChangeTextDocument(VscHandlers.handleTextDocumentChange);
 
   // Event to update active configuration items when changed without restarting vscode
   vscode.workspace.onDidChangeConfiguration((e: void) => {
@@ -76,6 +85,49 @@ export async function activate(context: vscode.ExtensionContext) {
       VscHandlers.handleKeyEventNV(args.text);
     });
   });
+
+  /*
+   * The following are VS Code events that must be handled specially
+   * to keep VS Code and Neovim in sync.
+   */
+
+  /*
+  vscode.commands.registerCommand('acceptSelectedSuggestion', () => {
+    // Related event: acceptSelectedSuggestionOnEnter
+
+    // Autocomplete.
+    // This event fires when a user inserts some text from a dropdown suggestion.
+    // This event does not contain the completed text.
+    // Instead, you will have to inspect the document before and after this event
+    // to recover the completed text.
+
+    // Just like the 'type' event, we will need a 'default:acceptSelectedSuggestion'
+    // handler so that we can have VS Code act normally and update nvim at the right time.
+
+    // We can use feedkeys to insert the text into nvim without expansion and
+    // nvim will treat it as if the user typed it.
+    // 'nt' options means treat the text as typed and do not remap
+    // https://github.com/neovim/neovim/blob/4e02f1ab871f30d80250537877924d522497493b/src/nvim/api/vim.c
+
+    // This function will eventually be something like:
+    const preText = document.getText();
+    await vscode.commands.executeCommand('default:acceptSelectedSuggestion');
+    const postText = document.getText();
+    const diffText = postText - preText;
+    await NvUtil.atomFeedKeys(diffText, 'nt', true);
+  });
+
+  vscode.commands.registerCommand('acceptSnippet', () => {
+    // I think this can be handled the same way as suggestions.
+  });
+
+  vscode.commands.registerCommand('deleteLeft', async () => {
+    // Related events: deleteRight, deleteWordLeft, deleteAllLeft, etc.
+
+    await Vim.input('<backspace>'); // or `<esc> dw i`, etc. for the other types of delete
+    await Vim.getMostRecentDiff(); // Rather than sync the entire buffer, I hope we can use diffs to get a smaller update.
+  });
+  */
 
   const keysToBind = packagejson.contributes.keybindings;
   const ignoreKeys = Configuration.ignoreKeys;
